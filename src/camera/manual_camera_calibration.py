@@ -21,7 +21,6 @@ class ManualCameraCalibrationProcessor(ImageProcessor, DefaultKeysProcessor):
 
         self.parameters = parameters
         self.sub_menus().update( {
-            'a': KeyProcessor( 'a', "Display calibration parameters", lambda im, proc: print( self.parameters ) ),
             'p': KeyProcessor( 'p', "Display calibration parameters", lambda im, proc: print( self.parameters ) ),
             '+': KeyProcessor( '+', "Add image to calibration images", lambda im, proc: self.add( im )  ),
             '-': KeyProcessor( '-', "Remove last image from calibration images", lambda im, proc: self.remove()  ),

@@ -9,6 +9,7 @@ from typing import Callable, List, Optional
 from src.common.file_utils import get_files_by_extension
 from src.common.image_loader import ImageLoader
 from src.common.image_saver import ImageSaver
+from src.common.processors import ProcessKeyResult
 
 def draw_contours(image:MatLike, contours: List[np.ndarray] ) -> MatLike:
     output = image.copy()
@@ -36,20 +37,25 @@ def load_images( image_loader:ImageLoader,
     
     img_pathes = get_files_by_extension( image_loader.get_dirpath(), image_loader.get_extension() )
     
-    for img_fpath in img_pathes:
+    i = 0
+    while i < len(img_pathes):
+        img_fpath = img_pathes[i]
         loader = ImageLoader.from_filepath( img_fpath )
         if ( loader is not None ):
-            load_image( loader, processed_image_saver, func, process_key, can_show_image )
+            result = load_image( loader, processed_image_saver, func, process_key, can_show_image )
+            if result == ProcessKeyResult.Next: i+=1
+            elif result == ProcessKeyResult.Previous: i = max( 0, i-1 ) 
+            elif result == ProcessKeyResult.Quit: break
 
 def load_image( image_loader:ImageLoader,
                 processed_image_saver:ImageSaver,
                 process_img:Optional[Callable[[MatLike], MatLike]] = None,
                 process_key:Optional[Callable[[int, MatLike, Optional[MatLike]],None]] = None,
-                can_show_image:bool = False ):
+                can_show_image:bool = False ) -> ProcessKeyResult:
     load = image_loader.load()
-
+    result = ProcessKeyResult.Quit
     if ( not len(load) ):
-        return
+        return result
     
     img = load[0]
     processed = None
@@ -64,11 +70,12 @@ def load_image( image_loader:ImageLoader,
     if ( can_show_image ):
         cv2.imshow( "original", img )
         if ( processed is not None ): cv2.imshow( "processed", processed )
-        _start_process_key_loop( img, processed, process_key )
+        result = _start_process_key_loop( img, processed, process_key )
     elif processed is not None:
         processed_image_saver.save( processed )
     
     cv2.destroyAllWindows()
+    return result
 
     
 def capture_image( camera_index:int, 
@@ -114,7 +121,7 @@ def capture_video( camera_index:int,
 
             cv2.imshow( 'camera', processed )
             
-            if ( not _process_key_loop( frame, processed, process_key ) ):
+            if ( _process_key_loop( frame, processed, process_key ) == ProcessKeyResult.Quit ):
                 break
 
         else:
@@ -124,25 +131,35 @@ def capture_video( camera_index:int,
     cap.release()
     cv2.destroyAllWindows()
 
-
 def _process_key_loop( 
         img:MatLike,
         process:Optional[MatLike],
-        process_key:Optional[Callable[[int, MatLike, Optional[MatLike]],None]] ) -> bool:
+        process_key:Optional[Callable[[int, MatLike, Optional[MatLike]],None]] ) -> ProcessKeyResult:
     key = cv2.waitKey(1)
     
+    if key == ord('Q'):
+        return ProcessKeyResult.Previous
+
+    if key == ord('S'):
+        return ProcessKeyResult.Next
+
     if key == ord('q'):
-        return False
+        return ProcessKeyResult.Quit
 
     if key >= 0 and process_key:
         process_key( key, img, process )
     
-    return True
+    return ProcessKeyResult.Continue
 
 def _start_process_key_loop(
-                img:MatLike,
+        img:MatLike,
         process:Optional[MatLike],
-        process_key:Optional[Callable[[int, MatLike, Optional[MatLike]],None]] ):
+        process_key:Optional[Callable[[int, MatLike, Optional[MatLike]],None]] ) -> ProcessKeyResult:
     
-    while ( _process_key_loop( img, process, process_key ) ):
+    result = ProcessKeyResult.Continue
+    
+    while ( result == ProcessKeyResult.Continue ):
+        result = _process_key_loop( img, process, process_key )
         continue
+
+    return result

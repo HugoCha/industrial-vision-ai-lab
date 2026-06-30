@@ -20,6 +20,40 @@ def otsu( img:MatLike ) -> MatLike:
     ret = cv2.threshold(img,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     return ret[1]
 
+def get_contours( img:MatLike ):
+    gray = grayscale( img )
+    blur = cv2.GaussianBlur(gray,(7,7),0)
+    _, th = cv2.threshold( blur, 30, 255, cv2.THRESH_BINARY )
+    kernel = np.ones((5,5), np.uint8)
+    morphology = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=1)
+    kernel = np.ones((7,7), np.uint8)
+    morphology = cv2.morphologyEx(morphology, cv2.MORPH_ERODE, kernel, iterations=2)
+    contours, _ = cv2.findContours(morphology, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    return contours
+
+def draw_mask_contour_fill( img, contour ):
+    sz = img.shape
+    mask = np.zeros((sz[1],sz[0]), np.uint8)
+    cv2.fillPoly( mask, [contour], 255 )
+    return mask
+
+def draw_mask_contour( img, contour ):
+    sz = img.shape
+    mask = np.zeros((sz[1],sz[0]), np.uint8)
+    mask = cv2.drawContours(
+        mask,
+        [contour],
+        -1,
+        255,
+        1 )
+    return mask
+
+def get_center( contour ):
+    M = cv2.moments(contour)
+    centroid_x = int(M["m10"] / M["m00"])
+    centroid_y = int(M["m01"] / M["m00"])
+    return (centroid_x, centroid_y)
+
 def is_valid_contour( contour:MatLike ) -> bool:
     area = cv2.contourArea(contour)
 

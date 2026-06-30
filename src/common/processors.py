@@ -2,9 +2,16 @@
 
 from abc import ABC, abstractmethod
 from cv2.typing import MatLike
+from enum import Enum
 from typing import Callable, Optional
 
 from src.common.image_saver import ImageSaver, ImageSaverParameters
+
+class ProcessKeyResult(Enum):
+    Continue = 0
+    Quit = 1
+    Next = 2
+    Previous = 3 
 
 class ImageProcessor(ABC):
     @abstractmethod
@@ -36,7 +43,13 @@ class KeysProcessor(ABC):
     @abstractmethod
     def sub_menus( self ) -> dict[str,KeyProcessor]:
         pass
+
+    def previous_menu( self ) -> str:
+        return "Previous"
     
+    def next_menu( self ) -> str:
+        return "Next"
+
     def quit_menu( self ) -> str:
         return "Quit"
 
@@ -51,6 +64,8 @@ class KeysProcessor(ABC):
         if sub_menus is not None:
             for key in sub_menus:
                 menu.append( f"'{key}' : {sub_menus[key].description}\n")
+        menu.append( f"'◀': {self.previous_menu()}\n" )
+        menu.append( f"'▶': {self.next_menu()}\n" )
         menu.append( f"'q': {self.quit_menu()}\n" )
         return "".join( menu )
 
