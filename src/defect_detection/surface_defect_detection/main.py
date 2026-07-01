@@ -20,7 +20,7 @@ class SurfaceDefectProcessor( ImageProcessor, DefaultKeysProcessor ):
         DefaultKeysProcessor.__init__( self, img_saver_params, process_img_saver_params )
         self.template_img = template_img
         self.matcher = ContourFitShapeMatcher( template_img )
-        self.inspector = ShapeInspector( template_img )
+        self.inspector = SurfaceInspector( template_img )
         self.sub_menus().update( {
             'c' : KeyProcessor( 'c', "Use contour Shape Matcher", lambda img, process: self._set_matcher( ContourFitShapeMatcher ) ),
             'e' : KeyProcessor( 'e', "Use ECC Shape Matcher", lambda img, process: self._set_matcher( ECCShapeMatcher ) ),
@@ -33,15 +33,16 @@ class SurfaceDefectProcessor( ImageProcessor, DefaultKeysProcessor ):
     def process_img( self, img:MatLike ) -> MatLike:
         affine_img = self.matcher.match( img )
         defect = self.inspector.inspect( affine_img )
-        mask = cv2.cvtColor(defect.mask, cv2.COLOR_GRAY2BGR)
-        defect_img = cv2.add( affine_img, mask )
-        return mask
+        #process = cv2.drawContours( affine_img, defect.contours, -1, (255,0,0))
+        process = cv2.cvtColor( defect.mask, cv2.COLOR_GRAY2BGR )
+        return process
     
     def title(self) -> str:
         return "Surface defection processor"
 
 def main():
-    img_loader_params = ImageLoaderParameters( DATA_BAD_PATH, IMAGE_EXTENSION, None )
+    img_loader_params = ImageLoaderParameters( DATA_BAD_PATH, IMAGE_EXTENSION, IMAGE_LOAD_NAME )
+    #img_loader_params = ImageLoaderParameters( DATA_GOOD_PATH, IMAGE_EXTENSION, IMAGE_LOAD_NAME )
     img_saver_params = ImageSaverParameters( DATA_IGNORED_PATH, "", IMAGE_EXTENSION, CAN_OVERRIDE )
     process_img_saver_params = ImageSaverParameters( DATA_IGNORED_PATH, "", IMAGE_EXTENSION, CAN_OVERRIDE )
     
@@ -49,7 +50,6 @@ def main():
     template_img_loader = ImageLoader( template_img_loader_params )
     template_img = template_img_loader.load()[0]
     processor = SurfaceDefectProcessor( template_img, img_saver_params, process_img_saver_params )
-    #show_image( template_img )
 
     launcher_params = LauncherParameters( 
         img_loader_params,

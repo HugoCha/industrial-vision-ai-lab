@@ -4,6 +4,42 @@ import cv2
 import numpy as np
 
 from cv2.typing import MatLike
+from typing import Sequence
+
+class MorphParameters:
+    def __init__(self, op, kernel, iteration ):
+        self.op = op
+        self.kernel = kernel
+        self.iteration = iteration
+
+    @classmethod
+    def OpenRectangle(cls, kernel_size=(5,5), iteration=1):
+        return cls(
+            cv2.MORPH_OPEN, 
+            cv2.getStructuringElement(cv2.MORPH_RECT,kernel_size),
+            iteration )
+    
+    @classmethod
+    def CloseRectangle(cls, kernel_size=(5,5), iteration=1):
+        return cls(
+            cv2.MORPH_CLOSE, 
+            cv2.getStructuringElement(cv2.MORPH_RECT,kernel_size),
+            iteration )
+    
+    @classmethod
+    def ErodeRectangle(cls, kernel_size=(5,5), iteration=1):
+        return cls(
+            cv2.MORPH_ERODE, 
+            cv2.getStructuringElement(cv2.MORPH_RECT,kernel_size),
+            iteration )
+    
+    @classmethod
+    def DilateRectangle(cls, kernel_size=(5,5), iteration=1):
+        return cls(
+            cv2.MORPH_DILATE, 
+            cv2.getStructuringElement(cv2.MORPH_RECT,kernel_size),
+            iteration )
+
 
 def is_grayscale( img:MatLike ) -> bool:
     return len( img.shape ) == 2
@@ -20,16 +56,24 @@ def otsu( img:MatLike ) -> MatLike:
     ret = cv2.threshold(img,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
     return ret[1]
 
-def get_contours( img:MatLike ):
+def get_contours( 
+        img:MatLike, 
+        threshold=30, 
+        morph_parameters:Sequence[MorphParameters]=[] ):
+    
     gray = grayscale( img )
-    blur = cv2.GaussianBlur(gray,(7,7),0)
-    _, th = cv2.threshold( blur, 30, 255, cv2.THRESH_BINARY )
-    kernel = np.ones((5,5), np.uint8)
-    morphology = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=1)
-    kernel = np.ones((7,7), np.uint8)
-    morphology = cv2.morphologyEx(morphology, cv2.MORPH_ERODE, kernel, iterations=2)
+    blur = cv2.GaussianBlur(gray,(9,9),0)
+    _, th = cv2.threshold( blur, threshold, 255, cv2.THRESH_BINARY )
+
+    morphology = th
+    for p in morph_parameters:
+        morphology = cv2.morphologyEx(morphology, p.op, p.kernel, iterations=p.iteration)
+    
     contours, _ = cv2.findContours(morphology, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     return contours
+
+def get_max_contour( contours ):
+    return max( contours, key=cv2.contourArea )
 
 def draw_mask_contour_fill( img, contour ):
     sz = img.shape
@@ -47,6 +91,12 @@ def draw_mask_contour( img, contour ):
         255,
         1 )
     return mask
+
+def draw_MinAreaRect( img: MatLike, rect, color=(0,0,255), thickness=2 ):
+    box = cv2.boxPoints(rect)
+    box = box.astype( np.int32 ).reshape(4, 1, 2)
+    rect_img = cv2.drawContours(img.copy(), [box], -1, color, thickness)
+    return rect_img
 
 def get_center( contour ):
     M = cv2.moments(contour)

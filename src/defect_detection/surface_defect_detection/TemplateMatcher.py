@@ -22,13 +22,13 @@ class TemplateMatcher(ABC):
     @property
     def template_contours( self ):
         if self.__template_contours is None:
-            self.__template_contours = get_contours( self.template_img )
+            self.__template_contours = self.get_contours( self.template_img )
         return self.__template_contours
     
     @property
     def template_main_contour( self ):
         if len( self.template_contours ) > 0:
-            return self.template_contours[0]
+            return get_max_contour( self.template_contours )
         return None
 
     @property
@@ -45,6 +45,12 @@ class TemplateMatcher(ABC):
                     self.template_img, 
                     self.template_main_contour )
         return self.__template_mask
+
+    def get_contours( self, img:MatLike ) -> Sequence[MatLike]:
+        morph_p = []
+        morph_p.append( MorphParameters.DilateRectangle() )
+        morph_p.append( MorphParameters.ErodeRectangle((7,7), 2) )
+        return get_contours( img, 30, morph_p )
 
     def warp( self, img_to_match, rotation_center, angle ):
         if self.template_center is None:
@@ -74,11 +80,11 @@ class PCAShapeMatcher(TemplateMatcher):
         super().__init__(template_img)
 
     def match(self, img_to_match: MatLike ) -> MatLike:
-        contours = get_contours( img_to_match )
+        contours = self.get_contours( img_to_match )
         rotated_image = img_to_match
 
         if len(contours) > 0:
-            cnt = contours[0]
+            cnt = get_max_contour( contours )
             result = get_orientation(cnt)
 
             if result is not None:
@@ -88,17 +94,17 @@ class PCAShapeMatcher(TemplateMatcher):
         return rotated_image
     
 class MinAreaRectShapeMatcher(TemplateMatcher):
-    def __init__(self, template_img: MatLike ):
+    def __init__(self, template_img: MatLike):
         super().__init__(template_img)
 
     def match(self, img_to_match: MatLike ) -> MatLike:
-        contours = get_contours( img_to_match )
+        contours = self.get_contours( img_to_match )
         rotated_image = img_to_match
 
         if len(contours) > 0:
-            contour = contours[0]
+            contour = get_max_contour( contours )
             rect = cv2.minAreaRect(contour)
-
+            
             center = rect[0]
             angle = rect[2]
 
@@ -119,11 +125,11 @@ class ContourFitShapeMatcher(TemplateMatcher):
         if ( self.template_mask is None ):
             return img_to_match
         
-        contours = get_contours( img_to_match )
+        contours = self.get_contours( img_to_match )
         rotated_image = img_to_match
 
         if len(contours) > 0 and self.template_center:
-            contour = contours[0]
+            contour = get_max_contour( contours )
             center = get_center( contour )
             new_center = [self.template_center[0] - center[0], self.template_center[1] - center[1]]
 
@@ -211,7 +217,9 @@ class ORBShapeMatcher(TemplateMatcher):
         orb = cv2.ORB.create(1000)
         
         template_gray = self.template_mask
-        gray = draw_mask_contour( img_to_match, get_contours( img_to_match )[0])
+        contours = self.get_contours( img_to_match )
+        max_cnt = get_max_contour( contours )
+        gray = draw_mask_contour( img_to_match, max_cnt)
         kp1, des1 = orb.detectAndCompute(template_gray, None)
         kp2, des2 = orb.detectAndCompute(gray, None)
 

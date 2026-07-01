@@ -36,7 +36,8 @@ class TemplateMatcherProcessor( ImageProcessor, DefaultKeysProcessor ):
         return "Shape matcher processor"
 
 def main():
-    img_loader_params = ImageLoaderParameters( DATA_BAD_PATH, IMAGE_EXTENSION, None )
+    #img_loader_params = ImageLoaderParameters( DATA_BAD_PATH, IMAGE_EXTENSION, None )
+    img_loader_params = ImageLoaderParameters( DATA_GOOD_PATH, IMAGE_EXTENSION, None )
     img_saver_params = ImageSaverParameters( DATA_BAD_PATH, "", IMAGE_EXTENSION, CAN_OVERRIDE )
     process_img_saver_params = ImageSaverParameters( DATA_IGNORED_PATH, "", IMAGE_EXTENSION, CAN_OVERRIDE )
     

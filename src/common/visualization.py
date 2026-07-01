@@ -68,8 +68,13 @@ def load_image( image_loader:ImageLoader,
         processed = process_img( img_to_process )
 
     if ( can_show_image ):
-        cv2.imshow( "original", img )
-        if ( processed is not None ): cv2.imshow( "processed", processed )
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        cv2.putText(img_to_process, "original", (5, 15), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+        combined = img_to_process
+        if ( processed is not None ): 
+            cv2.putText(processed, "processed", (5, 15), font, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            combined = np.hstack((img_to_process, processed))
+        cv2.imshow( "Result", combined )
         result = _start_process_key_loop( img, processed, process_key )
     elif processed is not None:
         processed_image_saver.save( processed )
