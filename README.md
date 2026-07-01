@@ -8,7 +8,7 @@ Projects for industrial computer vision and robotics.
 - [Object pose estimation](src/pose2d_estimation)
 - [ArUco marker pose estimation](src/ArUcoMarker)
 - [Surface defect detection](src/defect_detection/surface_defect_detection)
-- Classical ML defect classification (Not developped yet)
+- [Classical ML defect classification (Not developped yet)](src/defect_detection/ai_defect_detection)
 
 ## Installation
 
