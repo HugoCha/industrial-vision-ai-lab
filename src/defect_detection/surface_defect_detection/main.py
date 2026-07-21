@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+from src.common.ColorNormalizer import *
 from src.common.image_loader import ImageLoaderParameters
 from src.common.image_saver import ImageSaverParameters
 from src.common.launcher import Launcher, LaunchOption, LauncherParameters
@@ -19,23 +20,44 @@ class SurfaceDefectProcessor( ImageProcessor, DefaultKeysProcessor ):
         
         DefaultKeysProcessor.__init__( self, img_saver_params, process_img_saver_params )
         self.template_img = template_img
-        self.matcher = ContourFitShapeMatcher( template_img )
-        self.inspector = SurfaceInspector( template_img )
+        self.matcher = MinAreaRectShapeMatcher( template_img )
+        
+        self.template_creator_HSV = TemplateCreator( MinAreaRectShapeMatcher( template_img ), ColorNormalizer( ColorSpace.HSV ) )
+        self.template_creator_HSV.create_from_folder( DATA_GOOD_PATH, IMAGE_EXTENSION )
+        self.color_inspector = ColorDefectInspector( self.template_creator_HSV )
+        
+        self.template_creator_GRAY = TemplateCreator( MinAreaRectShapeMatcher( template_img ), ColorNormalizer( ColorSpace.GRAY ) )
+        self.template_creator_GRAY.create_from_folder( DATA_GOOD_PATH, IMAGE_EXTENSION )
+        self.material_inspector = MaterialDefectInspector( self.template_creator_GRAY )
+
+        self.global_inspector = MultipleDefectInspector( [self.color_inspector, self.material_inspector] )
+        
+        self.inspector_type = InspectorType.ALL
+
         self.sub_menus().update( {
-            'c' : KeyProcessor( 'c', "Use contour Shape Matcher", lambda img, process: self._set_matcher( ContourFitShapeMatcher ) ),
-            'e' : KeyProcessor( 'e', "Use ECC Shape Matcher", lambda img, process: self._set_matcher( ECCShapeMatcher ) ),
-            'm' : KeyProcessor( 'm', "Use Min area rect Shape Matcher", lambda img, process: self._set_matcher( MinAreaRectShapeMatcher ) ),
+            'a' : KeyProcessor( 'a', "Use all defect inspectors", lambda img, process: self._set_inspector( InspectorType.ALL ) ),
+            'c' : KeyProcessor( 'c', "Use color defect inspector", lambda img, process: self._set_inspector( InspectorType.COLOR ) ),
+            'm' : KeyProcessor( 'm', "Use material defect inspector", lambda img, process: self._set_inspector( InspectorType.MATERIAL ) ),
         } )
 
-    def _set_matcher( self, matcher_cls ):
-        self.matcher = matcher_cls( self.template_img )
+    def _set_inspector( self, type ):
+        self.inspector_type = type
 
     def process_img( self, img:MatLike ) -> MatLike:
         affine_img = self.matcher.match( img )
-        defect = self.inspector.inspect( affine_img )
-        #process = cv2.drawContours( affine_img, defect.contours, -1, (255,0,0))
-        process = cv2.cvtColor( defect.mask, cv2.COLOR_GRAY2BGR )
+        
+        if self.inspector_type == InspectorType.COLOR:
+            defect = self.color_inspector.inspect( affine_img )
+        elif self.inspector_type == InspectorType.MATERIAL:
+            defect = self.material_inspector.inspect( affine_img )
+        else:
+            defect = self.global_inspector.inspect( affine_img )
+
+        process = self.draw_defect( affine_img, defect )
         return process
+    
+    def draw_defect( self, img:MatLike, defect:Defect, color=(0,255,0), thickness=1 ) -> MatLike:
+        return cv2.drawContours( img, defect.contours, -1, color, thickness )
     
     def title(self) -> str:
         return "Surface defection processor"

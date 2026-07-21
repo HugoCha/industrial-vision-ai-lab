@@ -1,10 +1,14 @@
 #!/usr/bin/python3
 
 import cv2
+import numpy as np
 
 from abc import ABC, abstractmethod
 
 from src.common.vision_utils import *
+
+from .MetalNutInfo import *
+from .TemplateCreator import *
 
 class Defect:
     def __init__( self, mask ):
@@ -12,129 +16,119 @@ class Defect:
         self.contours, _ = cv2.findContours( mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE) 
 
 class Inspector(ABC):
-    def __init__(self, template_img):
-        self.template_img = template_img
-
     @abstractmethod
     def inspect( self, img ) -> Defect:
         pass
 
-class AddedMaterialInspector(Inspector):
-    def __init__(self, template_img):
-        super().__init__(template_img)
-        template_contour = get_contours(template_img)
-        self.template_mask = draw_mask_contour_fill(template_img, template_contour[0])
+class InspectorType(Enum):
+    ALL=0
+    COLOR=1
+    MATERIAL=2
 
-    def inspect( self, img ) -> Defect:
-        contours = get_contours(img, 30)
-        max_contour = get_max_contour( contours )
-        mask = draw_mask_contour_fill(img, max_contour)
-        diff = cv2.absdiff( self.template_mask, mask )
-        kernel = cv2.getStructuringElement( cv2.MORPH_RECT, (7,7) )
-        morph = cv2.morphologyEx( diff, cv2.MORPH_OPEN, kernel )
-        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(morph)
-        
-        sz = img.shape
-        defect_mask = np.zeros((sz[1],sz[0]), np.uint8)
-        for i in range(1, num_labels):
-            x = stats[i, cv2.CC_STAT_LEFT]
-            y = stats[i, cv2.CC_STAT_TOP]
-            w = stats[i, cv2.CC_STAT_WIDTH]
-            h = stats[i, cv2.CC_STAT_HEIGHT]
-            area = stats[i, cv2.CC_STAT_AREA]
+class ColorDefectInspector(Inspector):
+    def __init__(self, template_creator:TemplateCreator):
+        self.template_creator = template_creator
 
-            keepArea = area > 100 and area < 3000
-
-            if keepArea:
-                componentMask = (labels == i).astype("uint8") * 255
-                defect_mask = cv2.bitwise_or(defect_mask, componentMask)
-        
-        return Defect( defect_mask )
+    @property
+    def mean( self ):
+        return self.template_creator.template.mean
     
-class SurfaceInspector(Inspector):
-    def __init__(self, template_img):
-        super().__init__(template_img)
-        self.template_gray = grayscale(template_img)
-        #self.template_blur = cv2.GaussianBlur(self.template_gray,(19,19),0)
+    @property
+    def std( self ):
+        return self.template_creator.template.std
 
     def inspect( self, img ) -> Defect:
-        gray = grayscale(img)
-        gray = cv2.absdiff(self.template_gray,gray)
-        # Global histogram equalization
-        #equalized = cv2.equalizeHist(gray)
+        mask = np.zeros( (img.shape[1], img.shape[0]), dtype=np.uint8 )
 
-        # CLAHE (better for local contrast)
-        # clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        # equalized = clahe.apply(gray)
-        # blur = cv2.GaussianBlur(equalized,(9,9),0)
-        # Unsharp masking
-        #kernel = np.array([[-1, -1, -1], [-1, 9, -1], [-1, -1, -1]])
-        #sharpened = cv2.filter2D(blur, -1, kernel)
+        if self.mean is not None and self.std is not None:
+            preprocess_hsv = self.template_creator.preprocess( img )
+            preprocess_h, preprocess_s, preprocess_v = cv2.split( preprocess_hsv )
 
-        # Laplacian filtering
-        #laplacian = cv2.Laplacian(blur, cv2.CV_64F)
-        #sharpened = cv2.convertScaleAbs(laplacian)
-        #thresh = cv2.adaptiveThreshold(
-        #    blur, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        #    cv2.THRESH_BINARY_INV, 11, 2
-        #)
+            mean_h, mean_s, mean_v = cv2.split( self.mean )
+            std_h, std_s, std_v = cv2.split( self.std )
 
-        # Apply Gabor filters at multiple orientations
-        gray = gray.astype(np.float32) / 255.0
-        gabor_imgs = []
-        for theta in np.arange(0, np.pi, np.pi/90):  # 0, 45, 90, 135 degrees
-            gabor_img = self.gabor_filter(gray, theta=theta)
-            gabor_imgs.append(gabor_img)
+            _, template_mask = cv2.threshold( mean_v.astype( np.uint8 ), 50, 255, cv2.THRESH_BINARY )
 
-        # Combine responses (e.g., take the maximum)
-        #combined_gabor = np.max(gabor_imgs, axis=0)
-        combined_gabor = np.sqrt( np.sum(np.square(gabor_imgs), axis=0) )
-        combined_gabor -= combined_gabor.min()
-        combined_gabor /= combined_gabor.max()
-        _, thresh = cv2.threshold(combined_gabor, 0.15, 1.0, cv2.THRESH_BINARY)
-        thresh = (thresh * 255).astype(np.uint8)
+            contours, _ = cv2.findContours( template_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE )
+            contours = sorted( contours, key=cv2.contourArea, reverse=True )
+            
+            if ( len( contours ) >= 2 ):
+                mask1 = draw_mask_contour_fill( img, contours[0] )
+                mask2 = draw_mask_contour_fill( img, contours[1] )
+                template_mask = cv2.bitwise_xor( mask1, mask2 )
+                template_mask = cv2.drawContours( template_mask, [contours[0]], 0, 0, 4 )
+                template_mask = cv2.drawContours( template_mask, [contours[1]], 0, 0, 30 )
+            # blur
+            delta_h = np.abs( ( preprocess_h - mean_h ) / ( std_h + 1e-6 ) )
+            delta_s = np.abs( ( preprocess_s - mean_s ) / ( std_s + 1e-6 ) )
 
-        # diff = cv2.absdiff(self.template_blur, blur )
-        # blur = cv2.GaussianBlur(gray,(19,19),0)
-        # th = cv2.adaptiveThreshold( 
-        #     diff, 
-        #     255, 
-        #     cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-        #     cv2.THRESH_BINARY,
-        #     21,
-        #     4 )
-        # ksize = -1
-        # gX = cv2.Sobel(diff, ddepth=cv2.CV_32F, dx=1, dy=0, ksize=ksize)
-        # gY = cv2.Sobel(diff, ddepth=cv2.CV_32F, dx=0, dy=1, ksize=ksize)
-        # magnitude = cv2.magnitude(gX, gY)
-        # magnitude = cv2.convertScaleAbs(magnitude)
+            kernel_h = np.ones((3,3), np.float32)/9.
+            kernel_s = np.ones((3,3), np.float32)/9.
+            mask_h = cv2.filter2D(src=delta_h, ddepth=-1, kernel=kernel_h)
+            mask_s = cv2.filter2D(src=delta_s, ddepth=-1, kernel=kernel_s)
+            
+            mask_h = ( mask_h > 3. ).astype(np.uint8) * 255
+            mask_s = ( mask_s > 3. ).astype(np.uint8) * 255
 
-        # canny = cv2.Canny( diff, 10, 50 )
-        # combine the gradient representations into a single image
-        #combined = cv2.addWeighted(gX, 0.5, gY, 0.5, 0)
-        return Defect( thresh )
+            mask = cv2.bitwise_or( mask_s, mask_h, mask=template_mask )
+
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(mask)
+
+            sz = img.shape
+            defect_mask = np.zeros((sz[1],sz[0]), np.uint8)
+
+            if len( stats ) > 1:
+                max_area = np.max( stats[1:, cv2.CC_STAT_AREA] )
+                for i in range(1, num_labels):
+                    area = stats[i, cv2.CC_STAT_AREA]
+
+                    keepArea = area >= 9 and area < 5000 and area > max_area / 10
+
+                    if keepArea:
+                        componentMask = (labels == i).astype( np.uint8 ) * 255
+                        defect_mask = cv2.bitwise_or(defect_mask, componentMask)
+                
+            mask = defect_mask
+
+        return Defect( mask )
+
+class MaterialDefectInspector(Inspector):
+    def __init__(self, template_creator:TemplateCreator):
+        self.template_creator = template_creator
+        self.template_info = None
+
+    @property
+    def mean( self ):
+        return self.template_creator.template.mean
+
+    def inspect( self, img ) -> Defect:
+        mask = np.zeros( (img.shape[1], img.shape[0]), dtype=np.uint8 )
+
+        if self.template_info is None:
+            try:
+                self.template_info = MetalNutInfo.CreateFromImage( self.mean )
+            except:
+                return Defect( mask )
+
+        preprocess = grayscale( img ) #self.template_creator.preprocess( img )
+        preprocess = cv2.bilateralFilter( preprocess, -1, 10, 7 )
+        _, img_mask = cv2.threshold( preprocess.astype( np.uint8 ), 30, 255, cv2.THRESH_BINARY )
+        cv2.imshow("mask", self.template_info.mask)
+        mask = cv2.bitwise_xor( self.template_info.mask, img_mask )
+        mask = cv2.drawContours( mask, self.template_info.contours, 0, 0, 8 )
+        cv2.circle( mask, self.template_info.hole.center, int( self.template_info.hole.radius + 10. ), 0, -1 )
+
+        return Defect( mask )
     
-    def gabor_filter(self, 
-                     img, 
-                     kernel_size=21, 
-                     sigma=3, 
-                     theta=0., 
-                     lambda_=10, 
-                     gamma=0.5, 
-                     psi=0):
-        # Create Gabor kernel
-        kernel = cv2.getGaborKernel(
-            (kernel_size, kernel_size), sigma, theta, lambda_, gamma, psi
-        )
-        kernel -= kernel.mean()
-        kernel /= np.linalg.norm(kernel)
-        # Apply filter
-        filtered = cv2.filter2D(img, cv2.CV_32F, kernel)
-        return filtered
-
-class IntensityInspector(Inspector):
-    def __init__(self, template_img):
-        super().__init__(template_img)
+class MultipleDefectInspector( Inspector ):
+    def __init__( self, inspectors:Sequence[Inspector] ):
+        self.inspectors = inspectors
 
     def inspect( self, img ) -> Defect:
-        return 
+        mask = np.zeros( (img.shape[1], img.shape[0]), dtype=np.uint8 )
+
+        for inspector in self.inspectors:
+            defect = inspector.inspect( img )
+            mask = cv2.bitwise_or( mask, defect.mask )
+
+        return Defect( mask )

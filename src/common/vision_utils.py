@@ -75,10 +75,10 @@ def get_contours(
 def get_max_contour( contours ):
     return max( contours, key=cv2.contourArea )
 
-def draw_mask_contour_fill( img, contour ):
+def draw_mask_contour_fill( img, contour, color_scalar=255 ):
     sz = img.shape
     mask = np.zeros((sz[1],sz[0]), np.uint8)
-    cv2.fillPoly( mask, [contour], 255 )
+    cv2.fillPoly( mask, [contour], color_scalar )
     return mask
 
 def draw_mask_contour( img, contour ):

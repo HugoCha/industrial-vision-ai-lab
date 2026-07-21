@@ -20,22 +20,6 @@ class Template:
         self.mean = mean
         self.std = std
 
-class TemplateNormalizer(ImageProcessor):
-    def normalize( self, img:MatLike ) -> MatLike:
-        lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
-        l, a, b = cv2.split(lab)
-
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-        l_norm = clahe.apply(l)
-
-        lab_norm = cv2.merge([l_norm, a, b])
-        img_norm = cv2.cvtColor(lab_norm, cv2.COLOR_LAB2BGR)
-
-        return img_norm
-    
-    def process_img(self, img: MatLike ) -> MatLike:
-        return self.normalize( img )
-
 class TemplateAccumulator:
     def __init__( self, template:Template ):
         self.__template = template
@@ -75,13 +59,21 @@ class TemplateCreator:
         self.template = Template()
         self.accumulator = TemplateAccumulator( self.template )
 
+    def align_and_process( self, img:MatLike ) -> MatLike:
+        align = self.matcher.match( img )
+        return self.preprocess( align )
+
+    def preprocess( self, img:MatLike ):
+        preprocess = img.copy()
+
+        if ( self.filter is not None ):
+            preprocess = self.filter.process_img( preprocess )
+
+        return preprocess
+
     def create_from_images( self, imgs:Sequence[MatLike] ):
         for img in imgs:
-            preprocess = self.matcher.match( img )
-            
-            if ( self.filter is not None ):
-                preprocess = self.filter.process_img( preprocess )
-
+            preprocess = self.align_and_process( img )
             self.accumulator.add_template( preprocess )
 
     def create_from_loader( self, loader: ImageLoader ):
